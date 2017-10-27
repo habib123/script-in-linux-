@@ -1,0 +1,225 @@
+#!/bin/sh
+
+set -o pipefail
+workaround=0
+
+echo
+echo "==========$(basename $0)=============================="
+
+
+export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
+
+
+# check/install openvpn
+#
+if [ -e /usr/sbin/openvpn ] ; then
+  echo "===== openVPN package already installed."
+else
+  opkg -V0 update
+  opkg -V0 remove openvpn
+  opkg -V0 remove kmod-tun
+  opkg -V0 install openssl 2>&1 | egrep -v "Cannot install package openssl|Existing conffile /etc/config/openvpn|Collected errors"
+  opkg -V0 install openssl-util
+
+  # install openvpn package
+  opkg -V0 install openvpn 2>&1 | egrep -v "Cannot install package openssl|Existing conffile /etc/config/openvpn|Collected errors" ; exitcode=$?
+  
+  if  [ $exitcode = 0 ]  ; then
+    echo "===== openvpn regularely installed, OK"
+  else 
+    ### WORKAROUND
+    workaround=1
+    echo -e "\nUNABLE TO INSTALL openvpn regularely, trying workaround\n"
+    mkdir -p /tmp/opkg/openvpn
+    mkdir -p /tmp/opkg/kmod-tun
+    # kmod-tun
+    cd /tmp/opkg/kmod-tun
+    wget http://download.mios.com/firmware/openwrt/ramips/packages/kmod-tun_2.6.37.1-1_ramips.ipk
+    tar -xzf kmod-tun*ipk
+    tar -C / -xzf data.tar.gz
+    # openvpn
+    cd /tmp/opkg/openvpn
+    wget http://download.mios.com/firmware/openwrt/ramips/packages/openvpn_2.1.3-4_ramips.ipk
+    tar xzf openvpn*ipk
+    [ -e /etc/config/openvpn ] && cp /etc/config/openvpn /etc/config/openvpn.bak_tmp
+    tar -C / -xzf data.tar.gz
+    [ -e /etc/config/openvpn.bak_tmp ] && cp /etc/config/openvpn.bak_tmp /etc/config/openvpn
+    cd
+    rm -r /tmp/opkg
+    insmod  /lib/modules/$(uname -r)/tun.ko
+  fi
+                   
+fi
+
+
+# delete legacy mac config line from vpn config if existing
+#
+sed "/^option lladdr /d" -i /etc/config/openvpn
+
+
+# setup cronjobs
+#
+grep -q prosol/openvpn-ping-gw /etc/crontabs/root || echo '* * * * * /etc/prosol/openvpn-ping-gw  ### ping openvpn gateway' >> /etc/crontabs/root
+grep -q prosol/cleanup         /etc/crontabs/root || echo '30 * * * * /etc/prosol/cleanup  ### cleanup filesystem' >> /etc/crontabs/root
+
+
+
+
+
+# setup new sonnen VPN
+#
+
+setup_sonnen_vpn=1
+keycount=$(ls -1 /etc/openvpn/vpnclient.*.key 2>/dev/null | wc -l) 
+
+if [ "$setup_sonnen_vpn" = "1" ] ; then
+
+  if [ $keycount -ge 1 ] ; then
+
+    echo
+    echo ===== START setup_sonnen_vpn
+
+    if [ ! -x /usr/sbin/openvpn ] ; then
+      echo ===== installing openvpn...
+      opkg update
+      opkg install openvpn
+    fi
+    
+    echo ===== checking openvpn version... 
+    openvpn_version=$(openvpn --version | grep ^OpenVPN | sed -e 's/^OpenVPN \([^ ]*\).*$/\1/')
+    ovpn_v1=$(echo $openvpn_version | cut -d. -f1)
+    ovpn_v2=$(echo $openvpn_version | cut -d. -f2)
+    ovpn_v3=$(echo $openvpn_version | cut -d. -f3)
+    ovpn_min_v1=2
+    ovpn_min_v2=3
+    echo ===== openvpn version: ${ovpn_v1}.${ovpn_v2}.${ovpn_v3}   $openvpn_version
+    comp_lzo_mode="1"
+    if [ "$openvpn_version" -a $ovpn_v1 -ge $ovpn_min_v1 -a $ovpn_v2 -ge $ovpn_min_v2 ] ; then
+      comp_lzo_mode="adaptive"
+    fi
+
+    echo ===== checking files/certs...
+    for file in  tls-auth.key  sonnen-client.crt  sonnen-client.key  sonnen-ca.crt ; do
+      if [ ! -r /etc/openvpn/$file ] ; then
+        echo ERROR: $file cannot be found - no certificates copied?
+        exit 4
+      fi
+    done
+    echo ===== certs:
+    cd /etc/openvpn/
+    ls -1 vpnclient.v1.10.64*crt | sed "s/^/      /"
+    echo -n "===== key to be used:  "
+    cd /etc/openvpn/
+    stat -c %N /etc/openvpn/sonnen-client.key | cut -d"'" -f4
+    cd - >/dev/null
+    echo ===== starting sonnen openvpn setup...
+    sed -e "s/^option auth-nocache 1$//" -e "s/^option route-noexec 1$//" -e "s/^option ifconfig-noexec 1$//" -i /etc/config/openvpn
+    uci set openvpn.sonnen=openvpn
+    uci set openvpn.sonnen.enable=1
+    uci delete   openvpn.sonnen.remote 2>/dev/null
+    uci add_list openvpn.sonnen.remote="vpn00.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn01.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn02.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn03.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn04.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn05.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn06.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn07.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn08.sonnenbatterie.de 1196"
+    uci add_list openvpn.sonnen.remote="vpn09.sonnenbatterie.de 1196"
+    uci set openvpn.sonnen.remote_random=1
+    uci set openvpn.sonnen.client=1
+    uci set openvpn.sonnen.float=1
+    uci set openvpn.sonnen.auth=SHA256
+    uci set openvpn.sonnen.tls_client=1
+    uci set openvpn.sonnen.dev=tun
+    uci set openvpn.sonnen.cipher="AES-256-CBC"
+    uci set openvpn.sonnen.proto="udp"
+    uci set openvpn.sonnen.resolv_retry="infinite"
+    uci set openvpn.sonnen.nobind=1
+    uci set openvpn.sonnen.comp_lzo=$comp_lzo_mode
+    uci set openvpn.sonnen.verb=3
+    uci set openvpn.sonnen.mute=20
+    uci set openvpn.sonnen.persist_key=1
+    uci set openvpn.sonnen.persist_tun=1
+    uci set openvpn.sonnen.mute_replay_warnings=1
+    uci set openvpn.sonnen.log="/var/log/openvpn.sonnen.log"
+    uci set openvpn.sonnen.status="/var/log/openvpn.sonnen.status"
+    uci set openvpn.sonnen.ca="/etc/openvpn/sonnen-ca.crt"
+    uci set openvpn.sonnen.cert="/etc/openvpn/sonnen-client.crt"
+    uci set openvpn.sonnen.key="/etc/openvpn/sonnen-client.key"
+    uci set openvpn.sonnen.tls_auth="/etc/openvpn/tls-auth.key 1"
+    uci set openvpn.sonnen.ns_cert_type="server"
+    uci set openvpn.sonnen.keepalive="20 90"
+
+#
+# Update sonnenbatterie settings
+
+    uci set openvpn.sonnenbatterie.comp_lzo=$comp_lzo_mode
+
+    uci commit openvpn
+    /etc/init.d/openvpn enable sonnen
+    echo ===== ended sonnen openvpn setup
+    echo ===== update firewall for tun+ interface
+    sed -e "s/tun0/tun+/" -i /etc/firewall.user
+
+    echo ===== END setup_sonnen_vpn
+    echo
+
+  else
+    echo "===== NO certs found in /etc/openvpn/vpnclient.* - will NOT setup sonnen VPN"
+  fi
+
+else   # ^^^ if [ "$setup_sonnen_vpn" = "1" ]
+
+  echo ===== setup_sonnen_vpn is DISABLED
+
+fi  # ^^^ if [ "$setup_sonnen_vpn" = "1" ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+echo "===== starting firewall:"
+/etc/init.d/firewall restart | sed 's/^/    /'
+sleep 1
+
+
+echo "===== starting openvpn ... "
+/etc/init.d/openvpn enable
+/etc/init.d/openvpn stop
+sleep 1
+/etc/init.d/openvpn stop
+sleep 1
+killall openvpn 2>/dev/null
+sleep 1
+killall -9 openvpn 2>/dev/null
+sleep 1
+# start openvpn delayed -> otherwise immediately not reachable any more at 192.168.32.0/21
+( sleep 5 ; /etc/init.d/openvpn restart ) &
+
+sleep 15
+
+echo
+[ -e /var/log/openvpn.log ]     &&    echo "===== openvpn.log"    &&     tail -n15 /var/log/openvpn.log && echo
+[ -e /var/log/openvpn.sonnen.log ] && echo "===== openvpn.sonnen.log" && tail -n15 /var/log/openvpn.sonnen.log
+echo
+
+
+echo "==========$(basename $0)=============================="
+
+

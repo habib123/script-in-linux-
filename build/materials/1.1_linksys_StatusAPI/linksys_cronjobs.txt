@@ -1,0 +1,12 @@
+*/5 * * * * /sbin/fan_ctrl.sh
+*/5 * * * * /etc/prosol/ftpsync  ###  fetch GDB files from PSB
+*/5 * * * * /etc/prosol/ssh-tunnel-check  ###  check and restart ssh tunnel
+*/15 * * * * /etc/prosol/ping  ### ping server
+0 0,12 * * * /etc/prosol/check-sdcard  ###  check sdcard
+* * * * * /etc/prosol/openvpn-ping-gw  ### ping openvpn gateway
+0 0 * * * /etc/prosol/reboot-delayed  ### reboot nightly
+30 * * * * /etc/prosol/cleanup  ### cleanup filesystem
+* * * * * cd /etc/cmh-ludl/lua ; [ -e EventTransmitter.lua ] && /usr/bin/lua EventTransmitter.lua
+*/5 * * * * cd /etc/cmh-ludl/lua ; [ -e sf_sps_heartbeat.lua ] && /usr/bin/lua sf_sps_heartbeat.lua
+0 0 1 * * /etc/prosol/DeletePLCLogData  ### delete SD card files
+0 */6 * * * /etc/init.d/firewall restart ### firewall restart (linksys)

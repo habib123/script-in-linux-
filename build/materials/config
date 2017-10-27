@@ -1,0 +1,55 @@
+
+#
+# prosol vera config file
+#
+
+
+# ip of the PSB
+#
+PSB_IP="192.168.81.2"
+
+
+# where do we get the GDB files?
+#
+FTPSRV="$PSB_IP"
+FTPUSER=""
+FTPPASS=""
+FTPDIR="/StorageCard/Graphen"
+
+
+# tmp dir for GDB files on vera - should be on tmpfs
+#
+GDBDIR="/tmp/prosol"
+
+
+# vera serial
+#
+#VERA_SERIAL="$(hostname | sed 's/MiOS_//')"
+#VERA_SERIAL="OpenWrt"
+
+if cat /proc/version |                                                                                                                                          
+ 
+  grep OpenWrt                                                                                                                                                  
+ 
+then                                                                                                                                                            
+ 
+    VERA_SERIAL="OpenWrt"                                                                                                                                       
+               
+else                                                                                                                                                            
+ 
+                                                                                                                                                          
+    VERA_SERIAL="$(hostname | sed 's/MiOS_//')"
+fi
+
+
+# ssh tunnel settings
+SSHKEY="/etc/prosol/tunnel-key"
+FWDSRV="vera.sonnenbatterie.de"
+SSHPORT="222"
+SSHUSER="vera_$VERA_SERIAL"
+SSHCMD="sleep_24h_regardless_of_cmd_here"
+
+# enable (1) or disable (0) ssh-tunnel?
+ENABLE_SSHTUNNEL="0"
+
+BASE_PORT="65000"

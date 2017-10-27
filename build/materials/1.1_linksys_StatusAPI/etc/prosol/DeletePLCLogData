@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# enter this command for testing
+# cd Dokumente/Programming/MyCodes/BashScripts/SDcardCleanup
+# export PS1='> '
+# Felix Eisenmann 20.04.2017
+
+
+# read config
+#
+#. /etc/prosol/config
+
+
+#echo $FTPUSER
+#echo $FTPPASS
+#echo $FTPSRV
+
+###################################### THE FUNCTIONS #####################################
+
+# get ftp dir listing with file sizes
+
+checkDat()
+{
+	# set auth var
+	#
+	auth="" ; [ -n "$FTPUSER" -a -n "$FTPPASS" ] && auth="-u $FTPUSER -p $FTPPASS"
+	FTPSRV=$1
+	FTPUSER="" 
+	FTPPASS=""
+	DATADIR="/StorageCard/DATA"
+	FILE=$2
+	TmpFILE=Tmp$FILE
+	echo $FILE
+	if ! ping -c1 -q -W1 -w1  $FTPSRV  2>&1 >/dev/null ;
+	#if  ! ping -c1 -q -4 -W1 -w1  $FTPSRV  2>&1 >/dev/null ; 
+	then
+		echo "FTP server $FTPSRV of Battery $BATNR is NOT available/pingable, abort."
+		exit 1
+	else
+		echo "FTP server $FTPSRV is available. Congratulations!"
+			[ -z "$listing" ] && listing=$(curl -s ftp://$FTPSRV/$DATADIR/ | awk '{printf "%s\t%s\t%s.%s %s\n", $9, $5, $7,$6,$8 }')
+			size=$(echo "$listing" | grep "$FILE" | cut -f2)
+			[ -z "$size" ] && size=-1
+			echo $size
+			if [ $size -gt 10000000 ]; then #Wenn Datei >10MB
+			cd /tmp #Anpassen je nach Speicherort Skript
+			#	sizeStart=$size #Startgroesse merken
+				
+				# runter laden
+				curl -O ftp://$FTPSRV/$DATADIR/$FILE
+				feed_back=$?
+				#sizeLocal=$(ls -l Errors.csv | awk '{ print $5 }')
+				a=0
+				#Prüfen ob alles runter geladen wurde
+				#while [ $sizeLocal -lt $size -o ! -f Errors.csv ]; do
+				while [ $feed_back != 0 ]; do
+				if [ $a -lt 4 ]; then
+				 a=`expr $a + 1`
+				if ! ping -c1 -q -W1 -w1  $FTPSRV  2>&1 >/dev/null ;
+					then
+					sleep 1m
+				else
+					curl -O ftp://$FTPSRV/$DATADIR/$FILE
+					feed_back=$?
+				#	sizeLocal=$(ls -l Errors.csv | awk '{ print $5 }')
+				fi
+				else 
+				break
+				fi
+				done
+				
+				# zeilenanzahl ermitteln
+			
+				l1=$(wc -l "$FILE" | cut -d " " -f1)
+				echo $l1
+				Average=`expr $size / $l1`
+				echo $Average
+				AnzRest=`expr  9437184 / $Average`
+				echo $AnzRest
+				l2=$(( $l1 - 82000)) # anzahl zeilen zum überspringen ausrechnen
+				if [ `expr $l2 % 2` -eq 1 ];
+				then
+				l2=`expr $l2 + 1`
+				fi
+				# zeilen entfernen und in neue datei schreiben
+				sed 4,${l2}d $FILE > $TmpFILE
+				#sizeLocal=$(ls -l TmpErrors.csv | awk '{print $5}')
+				#echo $sizeLocal
+				
+				#UPLoad
+				curl -T $TmpFile ftp://$FTPSRV/$DATADIR/$FILE
+				feed_back=$?
+				#Dateigroesse ermitteln
+		#		listing=$(curl -s ftp://$FTPSRV/$DATADIR/ | awk '{printf "%s\t%s\t%s.%s %s\n", $9, $5, $7,$6,$8 }')
+		#	[ -z "$listing" ] && listing=$(curl -s ftp://$FTPSRV/$DATADIR/ | awk '{printf "%s\t%s\t%s.%s %s\n", $9, $5, $7,$6,$8 }')
+		#	size=$(echo "$listing" | grep "Errors.csv" | cut -f2)
+		#	[ -z "$size" ] && size=-1
+		#	echo $size
+			
+			#pruefen ob alles hoch geladen wurde, durch Test ob Datei auf Eaton < ErrorsTmp oder Datei größer als Datei am Anfang wenn nicht so lange machen bis alles da
+		#		while [ $size -lt $sizeLocal  -o  $size -ge $sizeStart ] ; do
+				while [ $feed_back != 0 ]; do
+					if [ $a -lt 4 ]; then
+						a=`expr $a + 1`
+							if ! ping -c1 -q -W1 -w1  $FTPSRV  2>&1 >/dev/null ;
+								then
+								sleep 1m
+							else
+								curl -T $TmpFILE ftp://$FTPSRV/$DATADIR/$FILE
+								feed_back=$?
+								#listing=$(curl -s ftp://$FTPSRV/$DATADIR/ | awk '{printf "%s\t%s\t%s.%s %s\n", $9, $5, $7,$6,$8 }')
+								#[ -z "$listing" ] && listing=$(curl -s ftp://$FTPSRV/$DATADIR/ | awk '{printf "%s\t%s\t%s.%s %s\n", $9, $5, $7,$6,$8 }')
+								#size=$(echo "$listing" | grep "Errors.csv" | cut -f2)
+								#[ -z "$size" ] && size=-1
+								#ec ho $size 
+							fi
+							else
+							rm $FILE
+							rm $TmpFILE
+							break
+							fi
+							done
+							
+							rm $FILE
+							rm $TmpFILE
+				else
+				printf "\t\tNothing to do\n"
+			fi
+		printf "\n"
+	fi
+}
+
+# retrieve content of the json-text
+json2bash()
+{
+	# visit this page for more information on how to use the json parser
+	# http://xmodulo.com/how-to-parse-json-string-via-command-line-on-linux.html
+	#back_feed=$(curl -i -H "Accept: application/json" -H "Content-Type: application/json" -X GET http://hostname/resource)
+	#bb=$(grep -Po '(?<="$back_feed": ")[^"]*')
+	#ab=$(jq '.$back_feed')
+	#echo $ab
+	echo "Replace this string with the retrieved json code from the url, which contains the vpn-ip and the smartfunction-passwords e.g. the vera-passwords for the battery with the certain serialnumber"
+}
+
+############################################# The Code ###############################################
+
+jsonRequestResponse=$(json2bash "Battery")
+
+# beginning of a for loop to check every battery
+	filecounter=0
+	###
+	batteryVPNIP="192.168.81.2" # $(cat $jsonRequestResponse | jq '.vpnip')
+	DataFile="Errors.csv"
+ 	checkDat $batteryVPNIP $DataFile
+	DataFile="Shutdown.csv"
+ 	checkDat $batteryVPNIP $DataFile
+	DataFile="Balance.csv"
+ 	checkDat $batteryVPNIP $DataFile
+	DataFile="Thresh.csv"
+ 	checkDat $batteryVPNIP $DataFile
+	#checkDat $batteryVPNIP $batterySFPWD $batterySERNR $DataFile
+	
+	#checkDat $batteryVPNIP $batterySFPWD $batterySERNR $DataFile
+	#echo "Battery $batterySERNR was checked."
+# end of for loop
+echo "
+
+Cleanup successfully done.
+"

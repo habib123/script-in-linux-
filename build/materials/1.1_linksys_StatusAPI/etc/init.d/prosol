@@ -1,0 +1,51 @@
+#!/bin/sh /etc/rc.common
+
+# get config
+#
+. /etc/prosol/config
+
+
+START=99
+STOP=15
+
+EXTRA_COMMANDS="status"
+EXTRA_HELP="        status  Get status"
+
+
+getpids() {
+  sshpids="$(ps | grep -v grep | grep 'ssh -p '$SSHPORT | awk '{print $1}' | sed 's/$/ /' | tr -d '\n')"
+  sshtunnelpids="$(pidof ssh-tunnel | sed 's/$/ /' | tr -d '\n')"
+}
+
+
+start() {        
+  #echo "start ssh-tunnel"
+  /etc/prosol/firewall
+  /etc/prosol/ssh-tunnel & #>/dev/null 2>&1 &
+}
+
+
+stop() {
+  getpids
+  echo "stop ssh-tunnel ... (ssh-pid: $sshpids, ssh-tunnel-pid: $sshtunnelpids) "
+  kill $sshtunnelpids $sshpids
+  sleep 2
+  kill -9 $sshtunnelpids $sshpids >/dev/null 2>&1
+}
+
+
+status() {          
+  getpids
+  #echo -e "\n  ssh-pid: $sshpids, ssh-tunnel-pid: $sshtunnelpids"
+  for pid in $sshpids $sshtunnelpids ; do
+    ps | grep -v grep | grep $pid
+  done
+}
+
+
+restart() {
+  delay=1
+  echo "restart ssh-tunnel with $delay s delay - you might have to reconnect"
+  ( /etc/init.d/prosol stop ; sleep $delay ; /etc/init.d/prosol start ) &
+}
+

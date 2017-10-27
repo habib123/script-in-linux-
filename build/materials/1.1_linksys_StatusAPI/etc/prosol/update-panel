@@ -1,0 +1,36 @@
+
+# config
+if [ -z "$1" ] ; then
+  host="192.168.81.2"
+  srcdir="/tmp/prosol/panelimage"
+else
+  host="$1"
+  srcdir="/srv/vera/tmp/panelimage-svn-export"
+fi
+
+
+dstdir="StorageCard/"
+
+
+revision="$(awk '{print $2}' $srcdir/revision)"
+
+
+# loeschen alter dateien
+curl ftp://$host/$dstdir -Q '-RMD update'
+
+
+# upload
+
+echo "--------------> $srcdir"
+cd $srcdir
+find -type f | while read f ; do
+  file="$(echo $f | sed 's/\.\///')"
+  echo "$file"
+  curl --silent --ftp-create-dirs -T "$file" "ftp://$host/$dstdir/update/$file"
+done
+
+
+# create update link
+curl --silent --ftp-create-dirs -T "update.lnk" "ftp://$host/windows/desktop/update-rev-$revision.lnk"
+cd - >/dev/null
+

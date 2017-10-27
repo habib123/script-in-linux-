@@ -1,0 +1,1 @@
+lua /etc/cmh-ludl/lua/SonnenbatterieWebserver.lua &

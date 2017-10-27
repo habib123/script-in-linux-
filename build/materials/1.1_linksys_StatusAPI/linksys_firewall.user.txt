@@ -1,0 +1,55 @@
+# This file is interpreted as shell script.
+# Put your custom iptables rules here, they will
+# be executed with each firewall (re-)start.
+
+
+iptables="/usr/sbin/iptables"
+sonnenbatterie="192.168.81.2"
+
+
+iface_vpn="tun+"
+
+ports_vpn="$ports_vpn  20 21"  # FTP
+ports_vpn="$ports_vpn  1200"   # MXpro
+ports_vpn="$ports_vpn  51738"  # RemoteClient
+#ports_vpn="$ports_vpn  5900"   # VNC
+
+
+iface_lan="eth0.2"
+
+ports_lan=""
+#ports_lan="$ports_lan  5900"  # VNC ( gesperrt, d.ackermann )
+
+
+# forward ports on iface_vpn
+#
+for port in $ports_vpn ; do
+  $iptables -t nat    -I PREROUTING --proto tcp --dport $port -i $iface_vpn -j DNAT --to $sonnenbatterie:$port
+  $iptables -t filter -I FORWARD    --proto tcp --dport $port -j ACCEPT
+done
+
+
+# forward ports on iface_lan
+#
+for port in $ports_lan ; do
+  $iptables -t nat    -I PREROUTING --proto tcp --dport $port -i $iface_lan -j DNAT --to $sonnenbatterie:$port
+done
+
+
+# drop udp packets to port 1202 EXCEPT from br-lan interface
+# (only allow these packets on lan ports, where the PLC/SPS is connected)
+#
+$iptables   -t filter -S INPUT | grep -q "br-lan    -p udp -m udp --dport 1202 -j ACCEPT" || $iptables -t filter -I INPUT -i br-lan    -p udp --dport 1202 -j ACCEPT
+$iptables   -t filter -S INPUT | grep -q "br-sonnen -p udp -m udp --dport 1202 -j ACCEPT" || $iptables -t filter -I INPUT -i br-sonnen -p udp --dport 1202 -j ACCEPT
+
+
+# steca-inverter web interface
+#
+$iptables -t filter -I FORWARD    --proto tcp --dport   80  -j ACCEPT
+$iptables -t nat    -I PREROUTING --proto tcp --dport 7980  -j DNAT --to-destination 192.168.81.10:80
+
+
+# allow and masquerade outgoing connections from internal lan
+#
+$iptables -t filter -I FORWARD -s 192.168.81.0/24 -j ACCEPT
+$iptables -t nat -A POSTROUTING -s 192.168.81.0/24 -o br-lan -j MASQUERADE

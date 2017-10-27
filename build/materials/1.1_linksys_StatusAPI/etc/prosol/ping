@@ -1,0 +1,15 @@
+#!/bin/sh
+
+#
+# send a ping signal and some info regularely to server
+#
+
+
+hostname="$OpenWrt"
+version="$(grep Rev: /etc/prosol/version | sed s/[^0-9]*//g)"
+
+url="https://meine.sonnenbatterie.de/ping/$hostname?v=$version"
+
+
+curl -s -k $url >/dev/null
+

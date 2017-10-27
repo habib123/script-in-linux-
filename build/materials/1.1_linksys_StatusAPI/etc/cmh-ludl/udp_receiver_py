@@ -1,0 +1,30 @@
+#!/usr/bin/python
+
+import select, socket, json
+
+
+port = 1202  # port on that the eaton panel sends the data
+bufferSize = 1024 # udp size
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(('<broadcast>', port))
+s.setblocking(0)
+
+status_dict = {"M30":""}
+
+while True:
+    result = select.select([s],[],[])
+    msg = result[0][0].recv(bufferSize)
+
+    res = {}
+
+    pairs = msg.split("|")
+    for p in pairs:
+        if p != "":
+            key, val = p.split(":", 1)
+            res[key] = val
+
+
+    status_dict.update(res)
+    with open('/tmp/prosol/status_data', 'w') as f:
+        json.dump(status_dict, f)

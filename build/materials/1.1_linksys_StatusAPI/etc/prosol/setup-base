@@ -1,0 +1,118 @@
+#!/bin/sh
+
+
+baseport="$1"
+export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
+
+
+echo -e "\n==========$(basename $0)=============================="
+
+
+### ensure correct permissions
+chmod a+x /etc/init.d/prosol /etc/prosol/ssh-tunnel /etc/prosol/ftpsync
+
+
+### install packages
+opkg -V0 update
+opkg -V0 remove  openvpn
+opkg -V0 remove  kmod-tun
+opkg -V0 install openssl 2>&1 | egrep -v "Cannot install package openssl|Existing conffile /etc/config/openvpn|Collected errors"
+opkg -V0 install openvpn 2>&1 | egrep -v "Cannot install package openssl|Existing conffile /etc/config/openvpn|Collected errors"
+opkg -V0 install rsync
+opkg -V0 install openssl-util
+
+# check vera model
+#cpu_g150="MT7620A"
+#veraEdge="oldVersion"
+#veraEdge=$(grep "^system type" /proc/cpuinfo | cut -d: -f2 | cut -d' ' -f3)
+
+# special handling of VeraEdge/G150
+if grep "^system type" /proc/cpuinfo | cut -d: -f2 | grep -q MT7620A ; then
+
+  # packages
+  echo "Installing VeraEdge specific packages... "
+#  opkg -V0 install kmod-usb-net-ax88179   #2>/dev/null
+#  modprobe ax88179_178a 
+#  opkg -V0 install kmod-usb-net-asix	  #2>/dev/null
+  opkg -V0 install kmod-usb-net-cdc-ether --force-depends #2>/dev/null
+  opkg -V0 install kmod-tun --force-depends
+  opkg -V0 install openvpn-openssl --force-depends       #2>/dev/null
+  
+  # firewall
+  echo "Setup VeraEdge specific firewall rules... "
+  echo -e '\n$iptables -t filter -I FORWARD -s 192.168.81.0/24 -j ACCEPT' >>/etc/firewall.user
+  echo -e '$iptables -t nat -A POSTROUTING -s 192.168.81.0/24 -o br-lan -j MASQUERADE' >>/etc/firewall.user
+  echo -e '$iptables -t filter -I INPUT -s 192.168.81.0/24 -j ACCEPT' >>/etc/firewall.user
+  # network
+  echo "Setup VeraEdge specific network settings... "
+#  ifconfig eth1 up
+#  ifconfig eth2 up 
+  uci set network.usb_sonnen=interface
+  uci set network.usb_sonnen.type=bridge
+  uci set network.usb_sonnen.ifname='eth1 eth2'
+  uci set network.usb_sonnen.proto=static
+  uci set network.usb_sonnen.ipaddr=192.168.81.1
+  uci set network.usb_sonnen.netmask=255.255.255.0
+  uci commit network
+  /etc/init.d/network restart
+  
+  uci delete firewall.include	
+  INCLUDE="$(uci set firewall include)"
+  uci set firewall.$INCLUDE.path=/etc/firewall.user
+  uci set firewall.$INCLUDE.reload=1
+  uci commit firewall
+  /etc/init.d/firewall restart
+fi
+
+
+### install cron-entries (FTP-sync, ping)...
+ct="/etc/crontabs/root"
+grep -q prosol/ftpsync $ct || echo '*/5 * * * * /etc/prosol/ftpsync  ###  fetch GDB files from PSB' >> $ct
+grep -q prosol/ssh-tunnel-check $ct || echo '*/5 * * * * /etc/prosol/ssh-tunnel-check  ###  check and restart ssh tunnel' >> $ct
+grep -q prosol/ping    $ct || echo '*/15 * * * * /etc/prosol/ping  ### ping server' >> $ct
+grep -q prosol/check-sdcard $ct || echo "0 0,12 * * * /etc/prosol/check-sdcard  ###  check sdcard"  >> $ct
+grep -q prosol/openvpn-ping-gw $ct || echo '* * * * * /etc/prosol/openvpn-ping-gw  ### ping openvpn gateway' >> $ct
+grep -q prosol/reboot-delayed $ct || echo '0 0 * * * /etc/prosol/reboot-delayed  ### reboot nightly' >> $ct
+grep -q prosol/cleanup $ct || echo '30 * * * * /etc/prosol/cleanup  ### cleanup filesystem' >> $ct
+grep -q "lua EventTransmitter.lua" $ct || echo '* * * * * cd /etc/cmh-ludl/lua ; [ -e EventTransmitter.lua ] && /usr/bin/lua EventTransmitter.lua' >> $ct
+grep -q "lua sf_sps_heartbeat.lua" $ct || echo '*/5 * * * * cd /etc/cmh-ludl/lua ; [ -e sf_sps_heartbeat.lua ] && /usr/bin/lua sf_sps_heartbeat.lua' >> $ct
+grep -q prosol/DeletePLCLogData $ct || echo '0 0 1 * * /etc/prosol/DeletePLCLogData  ### delete SD card files' >> $ct
+#grep -q prosol/gateway_ping $ct || echo '*/15 * * * * /etc/prosol/gateway_ping  ### ping gateway' >> $ct
+
+
+### install SSH-tunnel...
+if [ "$baseport" ] ; then
+  echo -e "Set BASE_PORT to: $baseport\n"
+  sed -i "s/^BASE_PORT=.*$/BASE_PORT=$baseport/" /etc/prosol/config
+fi
+
+
+### create dirs
+echo -n "Create directories on PLC: "
+for i in  DATA  Graphen  Zellspannungen  ; do
+  echo -n " $i "
+  curl --silent --ftp-create-dirs ftp://192.168.81.2/StorageCard/$i/ >/dev/null || echo "ERROR copying $i"
+done
+echo
+
+
+echo "Starting firewall:"
+/etc/init.d/firewall reload
+/etc/init.d/firewall restart  | sed 's/^/    /'
+
+### enable and start prosol script
+echo "Starting prosol init script:"
+/etc/init.d/prosol enabled || /etc/init.d/prosol enable
+/etc/init.d/prosol stop >/dev/null ; sleep 1
+/etc/init.d/prosol start | sed 's/^/    /' ; sleep 1
+/etc/init.d/prosol status
+
+### enable and start rest api
+echo "Starting REST API init scrip:"
+/etc/init.d/rest_api enabled || /etc/init.d/rest_api enable
+/etc/init.d/rest_api restart
+sleep 1
+echo "==========$(basename $0)=============================="
+
+date +%Y.%m.%d\ %H:%M:%S >>/etc/prosol/setup.timestamp
+

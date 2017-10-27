@@ -1,0 +1,268 @@
+#!/bin/sh
+
+
+#
+#
+# fetch files from machine
+#
+#   optional parameter:  how many days of data
+#   (default: 60 for GDBs, 30 for all other files)
+#
+
+
+# read config
+#
+. /etc/prosol/config
+
+
+# count of days to fetch data for
+days_gdb=60
+days=14
+
+# minimum free space on $GDBDIR (/tmp/prosol) in KB 
+min_free=4096  # 4 MB
+
+# max file size we will fetch from ftp in KB
+max_size=20480  # 20 MB
+
+lockfile="/tmp/$(basename $0).lock"
+max_lock_age=900
+
+
+# check param
+#
+if [ -n "$1" ] ; then
+  days_gdb=$1
+  days=$1
+  manual_days=true
+fi
+
+
+# set auth var
+#
+auth="" ; [ -n "$FTPUSER" -a -n "$FTPPASS" ] && auth="-u $FTPUSER -p $FTPPASS"
+
+
+# check ftp server availability
+#
+if  ! ping -c1 -q -4 -W1 -w1  $FTPSRV  2>&1 >/dev/null ; then
+  echo "FTP server '$FTPSRV' is NOT available/pingable, abort."
+  exit 1
+fi
+
+
+# functions
+#
+
+
+# check free space in destination dir
+check_df() {
+  free=$(df -P $GDBDIR | grep -v ^Filesystem | head -n1 | awk '{print $4}')
+  if [ $free -lt $min_free ] ; then
+    echo "ERROR: less than $min_free KB free on $GDBDIR ($free KB)"
+    return 1
+  else
+    return 0
+  fi
+}
+
+
+# get ftp dir listing with file sizes
+ftpdirlist() {
+  curl -s ftp://$FTPSRV/$1/ | awk '{printf "%s\t%s\t%s.%s %s\n", $9, $5, $7,$6,$8 }'
+}
+
+
+# check file size on ftp server
+ftpfilesize() {
+  dir="$(dirname $1)"
+  file="$(basename $1)"
+  listing="$2"
+  [ -z "$listing" ] && listing="$(ftpdirlist $dir)"
+  size=$(echo "$listing" | grep "^$file" | cut -f2)
+  [ -z "$size" ] && size=-1
+  echo $size
+}
+
+
+# convert bytes to KB
+bytes2kb() {
+  b=$1
+  kb=$(( $b / 1024 ))
+  [ $b -gt 0 -a $kb -eq 0 ] && kb=1
+  echo $kb
+}
+
+
+# fetch file from ftp server
+ftpfetch() {
+  f="$1"
+  b="$(basename $f)"
+  dirlistx="$2"
+  echo -en "$f\t"
+  # check before ftp fetch
+  if check_df ; then
+    filesize=$(ftpfilesize "$f" "$dirlistx")
+    filesizekb=$(bytes2kb "$filesize")
+    echo -en "[$filesizekb KB]\t "
+    if [ $filesizekb -lt $max_size ] ; then
+      local_filesize=0
+      [ -e $b ] && local_filesize="$(stat -c %s $b)"
+      if [ $filesize -ne $local_filesize ] ; then
+      echo ftpget "$auth $FTPSRV $b $f" 
+ #     ftpget "$auth $FTPSRV $b $f" && echo OK
+         wget -q -c ftp://anonymous@$FTPSRV"$f" && echo OK
+      else
+        echo "SKIPPED, same file size ftp/local"
+      fi
+    else
+      echo "ERROR: file $b is bigger than $max_size KB ($filesizekb KB) - NOT TRANSFERRING!"
+    fi
+  else
+    echo "ERROR (no space)"
+    return 1
+  fi
+  # check after ftp fetch
+  if check_df ; then
+    : # ok
+  else
+    echo "Deleting $b because $GDBDIR has less than $min_free KB free."
+    rm $b
+  fi
+}
+datestring() {
+  echo "$( date -D %s -d $(( $(date +%s) - 86400 * $1 )) '+%Y-%m-%d')"
+}
+
+
+##############################################################################
+
+
+
+
+# check lockfile and lockfile age, avoid running of
+# multiple ftpsync processes at the same time.
+# additionally allow locking from other processes (e.g. update-panel)
+#
+if [ -e $lockfile ] ; then
+  unixtime_now=$(date +%s)
+  unixtime_lockfile=$(stat -c%Y $lockfile)
+  lock_age=$(( $unixtime_now - $unixtime_lockfile ))
+  if [ $lock_age -gt $max_lock_age ] ; then
+    echo -e "\nLOCKED since more than $max_lock_age seconds (${lock_age}s), lock will be removed/renewed now...\n\n"
+    rm $lockfile
+    touch $lockfile
+  else
+    echo -e "\nALREADY RUNNING / LOCKED (since ${lock_age}s).\n"
+    echo -e "Please wait for the other update process to finish first.\n\n"
+    exit 250
+  fi
+else
+  touch $lockfile
+fi
+
+
+# get recent GDB files
+#
+echo
+d="$GDBDIR" ; [ -d $d ] || mkdir -p $d ; cd $d
+dirlist="$(ftpdirlist $FTPDIR)"
+for i in $(seq 61 90) ; do # delete old files
+  f="$(datestring $i).GDB"
+  [ -e $f -a "$manual_days" != "true" ] && echo "delete old file: $f" && rm $f
+done
+for i in $(seq  0 $days_gdb) ; do # fetch new files
+  ftpfetch "$FTPDIR/$(datestring $i).GDB" "$dirlist"
+done
+cd - >/dev/null
+
+
+#
+# get recent DATA files
+#
+
+
+#  do dircheck and get dirlist prior fetching files
+#
+echo
+d="$GDBDIR/DATA" ; [ -d $d ] || mkdir -p $d ; cd $d
+dirlist="$(ftpdirlist $FTPDIR/../DATA)"
+
+
+
+#  Fujigawa    (FGLog_2014-11-05.csv)
+#
+for i in $(seq 31 60) ; do # delete old files
+  f="FGLog_$(datestring $i).csv"
+  [ -e $f -a "$manual_days" != "true" ] && echo "delete old file: $f" && rm $f
+done
+for i in $(seq  0 $days) ; do # fetch new files
+  ftpfetch "$FTPDIR/../DATA/FGLog_$(datestring $i).csv" "$dirlist"
+done
+echo
+
+
+#  Voltage
+#
+for i in $(seq 31 60) ; do # delete old files
+  f="Voltage_$(datestring $i).csv"
+  [ -e $f -a "$manual_days" != "true" ] && echo "delete old file: $f" && rm $f
+done
+for i in $(seq  0 $days) ; do # fetch new files
+  ftpfetch "$FTPDIR/../DATA/Voltage_$(datestring $i).csv" "$dirlist"
+done
+echo
+
+
+#  Temp
+#
+for i in $(seq 31 60) ; do # delete old files
+  f="Temp_$(datestring $i).csv"
+  [ -e $f -a "$manual_days" != "true" ] && echo "delete old file: $f" && rm $f
+done
+for i in $(seq  0 $days) ; do # fetch new files
+  ftpfetch "$FTPDIR/../DATA/Temp_$(datestring $i).csv" "$dirlist"
+done
+echo
+
+
+#  WRData
+#
+for i in $(seq 1 14) ; do # delete old files
+  f="WRData_$(datestring $i).csv"
+  [ -e $f -a "$manual_days" != "true" ] && echo "delete old file: $f" && rm $f
+done
+ftpfetch "$FTPDIR/../DATA/WRData_$(datestring 0).csv" "$dirlist"
+echo
+
+
+
+# UnitSettings
+#
+ftpfetch "$FTPDIR/../DATA/Settings/UnitSettings.cfg" "$dirlist"
+echo
+
+
+
+#  Balance + Errors
+#
+ftpfetch "$FTPDIR/../DATA/Balance.csv" "$dirlist"
+ftpfetch "$FTPDIR/../DATA/Errors.csv" "$dirlist"
+
+
+#
+# Wechselrichter Debug Log
+# nicht vergessen wieder zu deaktivieren!
+# 
+#ftpfetch "$FTPDIR/../DATA/WRBug.csv" "$dirlist"
+ftpfetch "$FTPDIR/../DATA/Shutdown.csv" "$dirlist"
+
+
+cd - >/dev/null
+
+
+
+# lockfile entfernen
+rm $lockfile
+
+

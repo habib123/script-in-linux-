@@ -1,0 +1,30 @@
+#!/bin/sh
+
+. /etc/prosol/config
+
+#
+# DNAT - Portweiterleitungen zur Sonnenbatterie fuer die WAN-IP
+#
+
+
+ports="5900 51738"
+sonnenbatterie="$PSB_IP"
+
+iptables="/usr/sbin/iptables"
+
+#echo "setting extra firewall rules:"
+
+for port in $ports ; do
+  # filter rules
+  $iptables   -t filter -S forwarding_wan | grep -q "dport $port" || \
+    $iptables -t filter -A forwarding_wan -p tcp --dport $port -j ACCEPT
+  # nat rules
+  $iptables   -t nat -S prerouting_wan | grep -q "dport $port" || \
+    $iptables -t nat -A prerouting_wan -p tcp --dport $port -j DNAT --to $sonnenbatterie:$port
+done
+
+## display rules:
+#$iptables -t filter -S forwarding_wan
+#$iptables -t nat    -S prerouting_wan
+#echo
+

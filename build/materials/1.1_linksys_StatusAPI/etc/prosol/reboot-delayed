@@ -1,0 +1,12 @@
+#!/bin/sh
+
+#delay=$(( $RANDOM / 18 ))   # 0 - 1840 s delay
+delay=$(( $RANDOM /  6 ))   # 0 - 5461 s ( ~1.5 hours) delay
+
+echo "Will reboot in $delay s ($(( $delay / 60 )) min) ..."
+sleep $delay
+cd /etc/cmh-ludl/lua ; [ -e SF_daily_traffic.lua ] && /usr/bin/lua SF_daily_traffic.lua
+echo "Will reboot now ..."
+sleep 1
+/sbin/reboot
+

@@ -1,0 +1,36 @@
+#!/bin/sh
+
+
+# read config
+#
+. /etc/prosol/config
+
+
+p_ssh=$(( $BASE_PORT + 0 )) # ssh vera
+p_psb=$(( $BASE_PORT + 1 )) # SPS port
+p_vnc=$(( $BASE_PORT + 2 )) # VNC panel
+p_rem=$(( $BASE_PORT + 3 )) # RemoteClient
+p_web=$(( $BASE_PORT + 4 )) # WEB VISU von SPS
+p_lua=$(( $BASE_PORT + 5 )) # Luup local
+p_ui5=$(( $BASE_PORT + 6 )) # UI5
+
+
+FWD_OPTS=""
+FWD_OPTS="$FWD_OPTS -R $p_ssh:127.0.0.1:22"    # ssh to vera
+FWD_OPTS="$FWD_OPTS -R $p_psb:$PSB_IP:1200"    # remote access psb
+FWD_OPTS="$FWD_OPTS -R $p_vnc:$PSB_IP:5900"    # vnc psb
+FWD_OPTS="$FWD_OPTS -R $p_rem:$PSB_IP:51738"   # eaton/win-ce RemoteClient
+FWD_OPTS="$FWD_OPTS -R $p_web:$PSB_IP:8080"    # WEB VISU von SPS
+FWD_OPTS="$FWD_OPTS -R $p_lua:127.0.0.1:3480"  # Luup local
+FWD_OPTS="$FWD_OPTS -R $p_ui5:127.0.0.1:80"    # UI5
+
+
+# start ssh tunnel
+#
+until false ; do
+  echo "start/restart ssh-tunnel"
+  ssh -p $SSHPORT -K 30 -I 3600 -y -i $SSHKEY $FWD_OPTS  $SSHUSER@$FWDSRV  "$SSHCMD"
+  echo "ssh-tunnel stopped, exit code $?, sleep 2"
+  sleep 2
+done
+

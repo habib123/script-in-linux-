@@ -1,0 +1,66 @@
+#!/bin/sh /etc/rc.common
+
+
+START=99
+STOP=15
+
+EXTRA_COMMANDS="status log"
+EXTRA_HELP="        status  Get status
+        log     Get logfile content"
+
+TITLE="Sonnenbatterie STATUS API"
+COMMAND="/etc/prosol/status_api"
+
+
+getpids() {
+  ps | grep -v grep | grep " $COMMAND" | awk '{print $1}' | sed 's/$/ /' | tr -d '\n'
+}
+
+
+start() {
+  pids="$( getpids )"
+  if [ -z "$pids" ] ; then
+    echo "start $TITLE ..."
+    $COMMAND &
+  else
+    echo "NOT starting $TITLE - already running (PID: $pids)"
+  fi
+}
+
+
+stop() {
+  pids="$( getpids )"
+  if [ -n "$pids" ] ; then
+    echo "stop $TITLE ... (PID: $pids) "
+    kill $pids ; sleep 1
+    kill -9 $pids >/dev/null 2>&1
+    curl -s http://localhost:3480/rest/quit >/dev/null
+  else
+    echo "NOT stopping $TITLE - not running."
+  fi
+}
+
+
+status() {
+  pids="$( getpids )"
+  [ -n "$pids" ] && echo "RUNNING:" || echo "NOT RUNNING"
+  for pid in $pids ; do
+    ps | grep -v grep | grep "$pid "
+  done
+}
+
+
+restart() {
+  # echo "restart $TITLE ..."
+  $1 stop
+  sleep 1
+  $1 start
+}
+
+
+log() {
+  logfile="/tmp/prosol/logs/webserver/status_server.log"
+  echo -e "\nLOGFILE $logfile  (press CTRL-c to quit):\n"
+  tail -Fn30 $logfile
+}
+

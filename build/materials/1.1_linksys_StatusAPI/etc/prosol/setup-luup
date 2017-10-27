@@ -1,0 +1,86 @@
+#!/bin/sh
+
+
+urlbase="http://localhost:3480/data_request"
+
+room="Sonnenbatterie"
+name="Sonnenbatterie"
+#impl_file="I_PSBatterie.xml"
+impl_file="I_Battery1.xml"
+#device_file="D_PSBatterie.xml"
+device_file="D_Battery1.xml"
+device_type="urn:schemas-upnp-org:device:PSBatterie:1"
+
+
+variable_set() {
+  echo -en "  set $1=$2  "
+  curl -q -s -S "$urlbase?id=variableset&Variable=$1&Value=$2"
+  echo
+}
+
+
+echo -e "\n==========$(basename $0)=============================="
+
+
+echo -n 'Waiting for LUUP engine coming alive: ' 
+for i in $(seq 1 15) ; do
+  luup_result=$(curl -q -s "http://localhost:3480/data_request?id=alive")
+  if [ "$luup_result" = "OK" ] ; then
+    echo OK
+    echo Setting variables:
+    echo 'Europe|Berlin|CET-1CEST,M3.4.0,M10.4.0/3' >/etc/TZ-full
+    echo 'CET-1CEST,M3.4.0,M10.4.0/3' >/etc/TZ
+    variable_set  timezone            0
+    variable_set  date_format         dd/mm/yy
+    variable_set  TemperatureFormat   C
+    variable_set  PK_City             13594
+    variable_set  longitude           10.617000
+    variable_set  latitude            47.883000
+    variable_set  currency            %E2%82%AC
+    variable_set  KwhPrice            0.21
+    variable_set  City_description    Kaufbeuren
+    variable_set  Region_description  Bayern
+    # disabled because of UI7 error AltEventServer
+    #variable_set  AltEventServer      meine.sonnenbatterie.de
+    # room
+    if curl -q -s "http://localhost:3480/data_request?id=sdata&output_format=xml" | grep -q 'room name="Sonnenbatterie'  ; then
+      echo "Room '$room' already existing, good."
+    else
+      echo -en "Create room '$room': "
+      curl -q -s -S "$urlbase?id=room&action=create&name=$room" >/dev/null && echo OK
+    fi
+    # device
+    if curl -q -s "http://localhost:3480/data_request?id=sdata&output_format=xml" | grep -q 'device name="Sonnenbatterie'  ; then
+      echo "Device '$name' already existing, good."
+    else
+      echo -en "Create device '$name': "
+      devcheckurl="$urlbase?id=finddevice&devtype=${device_type}"
+      if [ "$(curl -q -s -S $devcheckurl)" = "0" ] ; then
+        curl -q -s -S "$urlbase?id=action&serviceId=urn:micasaverde-com:serviceId:HomeAutomationGateway1&action=CreateDevice&Description=${name}&Reload=1&NoDupId=1&UpnpDevFilename=${device_file}&UpnpImplFilename=${impl_file}&RoomNum=1" >/dev/null && echo OK
+      else
+        echo "already exists, OK"
+      fi
+    fi
+    break
+  else
+    echo -n . ; sleep 3
+  fi
+done
+[ "$luup_result" = "OK" ] || echo 'Installation Sonnenbatterie-Device FEHLGESCHLAGEN, Luup-Engine nicht erreichbar.'
+
+
+echo "Set icon links..."
+for i in /etc/cmh-ludl/*.png ; do ln -sf $i /www/cmh/skins/default/icons/ ; done
+
+echo -n "Disabling DHCP: "
+sed -i /etc/config/dhcp     -e "s/option 'dynamicdhcp' '1'/option 'dynamicdhcp' '0'/" && echo OK
+
+echo -n "Disabling WIFI: "
+sed -i /etc/config/wireless -e "s/option 'disabled' '0'/option 'disabled' '1'/" && echo OK
+
+echo -n "Disabling SSID broadcasting: "
+sed -i /etc/config/wireless -e "s/option 'hidden' '0'/option 'hidden' '1'/" && echo OK
+
+
+echo "==========$(basename $0)=============================="
+
