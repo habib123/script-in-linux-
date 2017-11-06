@@ -7,7 +7,7 @@ opkg install python3-light python luafilesystem luasocket
 
 tar xf ./fs.tar -C /
 if [ "$(cat /etc/rc.local | grep restartfirewall)" == "" ] ; then
-  sed -i "/exit/ { N; s/^exit/\/etc\/prosol\/restartfirewall\n&/ }" /etc/rc.local
+  sed -i "/exit/  \/etc\/prosol\/restartfirewall\ " /etc/rc.local
 fi
 /bin/sync
 
