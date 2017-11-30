@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/ash -e
 ROOT=$(dirname $0)
 cd ${ROOT}
 

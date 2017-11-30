@@ -1,0 +1,11 @@
+Package: sonnen-linksys 
+Architecture: x86 
+Priority: optional
+Section: base
+Version: 0.0.0.0
+Maintainer: sonnen GmbH <info@sonnenbatterie.de>
+Description: sonnen comissionning package for Linksys 
+Depends:
+Suggests:
+Conflicts:
+
