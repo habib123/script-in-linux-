@@ -3,7 +3,7 @@ BUILD_DIR=./build
 rm -rf ${BUILD_DIR}
 mkdir -p ${BUILD_DIR}
 
-unzip ./materials/1.1_linksys_StatusAPI_0_1.zip -d ${BUILD_DIR}/materials 
+unzip ./materials/1.1_linksys_StatusAPI_0_3.zip -d ${BUILD_DIR}/materials 
 cp ./materials/src/* ${BUILD_DIR}/materials
 cp ./materials/config ${BUILD_DIR}/materials
 
@@ -76,5 +76,5 @@ tar cvf ../package/fs.tar .
 
 cd ..
 cd ${PKG_DIR}
-tar cvf ../setup.tar .
+tar cvf ../../setup.tar .
 
