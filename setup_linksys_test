@@ -1,0 +1,8 @@
+#!/bin/bash
+
+psb="$1"
+log="/srv/vera/log/setup/$psb.log"
+
+echo -e "\n\n" >>$log
+$(dirname $0)/setup_linksys.rb $@ 2>&1 | tee -a $log
+
